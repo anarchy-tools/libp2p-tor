@@ -1,5 +1,5 @@
 import { arrayify, BytesLike } from "@ethersproject/bytes";
-import { Buffer } from "buffer";
+import { Buffer } from "node:buffer";
 
 enum CellCommand {
   PADDING,

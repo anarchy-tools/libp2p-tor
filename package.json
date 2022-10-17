@@ -25,13 +25,17 @@
     "@libp2p/kad-dht": "^5.0.1",
     "@libp2p/mdns": "^4.0.0",
     "@libp2p/mplex": "^7.0.0",
+    "@libp2p/peer-id": "^1.1.16",
     "@libp2p/peer-id-factory": "^1.0.19",
     "@libp2p/tcp": "4.1.0",
     "buffer": "^6.0.3",
     "global": "^4.4.0",
+    "it-length-prefixed": "^8.0.3",
+    "it-map": "^2.0.0",
     "it-pipe": "^2.0.4",
     "libp2p": "0.38.0",
     "multiaddr": "^10.0.1",
-    "peer-id": "^0.16.0"
+    "peer-id": "^0.16.0",
+    "uint8arrays": "^4.0.2"
   }
 }

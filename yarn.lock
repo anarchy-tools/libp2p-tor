@@ -567,7 +567,7 @@
     uint8arraylist "^2.0.0"
     uint8arrays "^4.0.2"
 
-"@libp2p/peer-id@^1.0.0", "@libp2p/peer-id@^1.1.0", "@libp2p/peer-id@^1.1.13", "@libp2p/peer-id@^1.1.15", "@libp2p/peer-id@^1.1.8":
+"@libp2p/peer-id@^1.0.0", "@libp2p/peer-id@^1.1.0", "@libp2p/peer-id@^1.1.13", "@libp2p/peer-id@^1.1.15", "@libp2p/peer-id@^1.1.16", "@libp2p/peer-id@^1.1.8":
   version "1.1.16"
   resolved "https://registry.yarnpkg.com/@libp2p/peer-id/-/peer-id-1.1.16.tgz#36461ce565371d9e897b49c38013f2ae9f200f38"
   integrity sha512-frt4wRNme5fR8sFl6LLL22brfEIDR09ewE4ICaRzYC32wvI9LK4oXfMOytpW7YUX1nH/r5mOcJgmZaDW0y6nZQ==
@@ -1394,7 +1394,7 @@ it-handshake@^4.0.1, it-handshake@^4.1.2:
     p-defer "^4.0.0"
     uint8arraylist "^2.0.0"
 
-it-length-prefixed@^8.0.2:
+it-length-prefixed@^8.0.2, it-length-prefixed@^8.0.3:
   version "8.0.3"
   resolved "https://registry.yarnpkg.com/it-length-prefixed/-/it-length-prefixed-8.0.3.tgz#a7774e3308892a1715a0cf6249465e9aecfe3a08"
   integrity sha512-qAMDAZHd9zuDH8UDjG9ISyF/L1BJfUmdqgOAo/15a7LE1EsZgDntV5/2ARlqaGSa1fzeEL0qdg6JDaUk0L//LA==
@@ -1414,6 +1414,11 @@ it-map@^1.0.5, it-map@^1.0.6:
   version "1.0.6"
   resolved "https://registry.yarnpkg.com/it-map/-/it-map-1.0.6.tgz#6aa547e363eedcf8d4f69d8484b450bc13c9882c"
   integrity sha512-XT4/RM6UHIFG9IobGlQPFQUrlEKkU4eBUFG3qhWhfAdh1JfF2x11ShCrKCdmZ0OiZppPfoLuzcfA4cey6q3UAQ==
+
+it-map@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/it-map/-/it-map-2.0.0.tgz#4fd20dfae9eeb21b3dac812774c09d490ee5b691"
+  integrity sha512-mLgtk/NZaN7NZ06iLrMXCA6jjhtZO0vZT5Ocsp31H+nsGI18RSPVmUbFyA1sWx7q+g92J22Sixya7T2QSSAwfA==
 
 it-merge@^1.0.1, it-merge@^1.0.3, it-merge@^1.0.4:
   version "1.0.4"

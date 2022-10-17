@@ -4,22 +4,30 @@ import { Noise } from "@chainsafe/libp2p-noise";
 import { StreamHandler } from "@libp2p/interface-registrar";
 import type { Libp2pOptions } from "libp2p";
 import { createLibp2p } from "libp2p";
+import { fromString } from "uint8arrays";
+import { deserializePeerId } from "./util.js";
+import { encode } from "it-length-prefixed";
+import { pipe } from "it-pipe";
 
-const relays = {};
+const relays: Record<string, any> = {};
 
 const unregister: StreamHandler = async ({ connection }) => {
   delete relays[connection.remotePeer.toString()];
 };
 
-const listRelays: StreamHandler = async ({ connection, stream }) => {
-  //TODO: write this out
+const listRelays: StreamHandler = async ({ stream }) => {
+  pipe(
+    Object.values(relays).map((d) => fromString(JSON.stringify(d))),
+    encode(),
+    stream.sink
+  );
 };
 
 const register: StreamHandler = async ({ connection }) => {
-  relays[connection.remotePeer.toString()] = {
-    remoteAddr: connection.remoteAddr,
-    remotePeer: connection.remotePeer,
-  };
+  (relays[connection.remotePeer.toString()] = deserializePeerId(
+    connection.remotePeer
+  )),
+    console.log("registered peer");
 };
 
 export const runRelay = async (options: Libp2pOptions) => {
