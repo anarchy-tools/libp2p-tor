@@ -12,7 +12,7 @@ import { Multiaddr } from "@multiformats/multiaddr";
 
 export class Relay extends EventEmitter {
   private _libp2p: Libp2p;
-  private key: ECDHKey;
+  private permanentKey: ECDHKey;
   public registries: Multiaddr[];
 
   constructor(registries: Multiaddr[]) {
@@ -28,7 +28,7 @@ export class Relay extends EventEmitter {
     //@ts-ignore
     options.streamMuxers = [mplex()()];
 
-    this.key = await keys.generateEphemeralKeyPair("P-256");
+    this.permanentKey = await keys.generateEphemeralKeyPair("P-256");
     this._libp2p = await createLibp2p(options);
     await this._libp2p.start();
     await this.register();
@@ -49,7 +49,11 @@ export class Relay extends EventEmitter {
         registry,
         "/tor/1.0.0/register"
       );
-      pipe([this.key.key], encode(), stream.sink);
+      pipe([this.permanentKey.key], encode(), stream.sink);
     }, Promise.resolve());
+  }
+
+  key() {
+    return this.permanentKey.key;
   }
 }

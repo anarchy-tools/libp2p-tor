@@ -4,7 +4,7 @@
   "description": "libp2p onion router implementation",
   "scripts": {
     "build": "tsc",
-    "test": "mocha"
+    "test": "mocha --exit"
   },
   "main": "lib/index.js",
   "repository": "https://github.com/anarchy-tools/libp2p-tor",
@@ -13,6 +13,7 @@
   "license": "MIT",
   "private": false,
   "devDependencies": {
+    "@types/chai": "^4.3.3",
     "@types/mocha": "^10.0.0",
     "@types/node": "^18.11.0",
     "chai": "^4.3.6",
