@@ -1,14 +1,13 @@
 import { EventEmitter } from "node:events";
-import { createLibp2p } from "libp2p";
 import type { Libp2p, Libp2pOptions } from "libp2p";
-import { mplex } from "@libp2p/mplex";
-import { Noise } from "@chainsafe/libp2p-noise";
-import { TCP } from "@libp2p/tcp";
+import type { StreamHandler } from "@libp2p/interface-registrar";
+import { createLibp2pNode } from "./libp2p.wrapper";
 import { keys } from "@libp2p/crypto";
 import type { ECDHKey } from "@libp2p/crypto/keys/interface";
 import { pipe } from "it-pipe";
 import { encode } from "it-length-prefixed";
 import { Multiaddr } from "@multiformats/multiaddr";
+import { PeerId } from "@libp2p/interface-peer-id";
 
 export class Relay extends EventEmitter {
   private _libp2p: Libp2p;
@@ -20,25 +19,25 @@ export class Relay extends EventEmitter {
     this.registries = registries;
   }
 
-  async run(options: Libp2pOptions) {
-    //@ts-ignore
-    options.transports = [new TCP()];
-    //@ts-ignore
-    options.connectionEncryption = [new Noise()];
-    //@ts-ignore
-    options.streamMuxers = [mplex()()];
-
+  async run(
+    options: Libp2pOptions = {
+      addresses: {
+        listen: ["/ip4/127.0.0.1/tcp/0"],
+      },
+    }
+  ) {
     this.permanentKey = await keys.generateEphemeralKeyPair("P-256");
-    this._libp2p = await createLibp2p(options);
+    this._libp2p = await createLibp2pNode(options);
     await this._libp2p.start();
     await this.register();
   }
 
-  handle(protocol, handler, options = {}) {
+  handle(protocol: string, handler: StreamHandler, options = {}) {
     return this._libp2p.handle(protocol, handler, options);
   }
 
-  dialProtocol(peerId, protocol, options = {}) {
+  dialProtocol(peerId: Multiaddr | PeerId, protocol: string, options = {}) {
+    //@ts-ignore
     return this._libp2p.dialProtocol(peerId, protocol, options);
   }
 
