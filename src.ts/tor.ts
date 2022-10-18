@@ -1,5 +1,5 @@
 import { arrayify, BytesLike } from "@ethersproject/bytes";
-import { Buffer } from 'buffer';
+import { Buffer } from "node:buffer";
 
 enum CellCommand {
   PADDING,
@@ -17,7 +17,7 @@ enum RelayCellCommand {
   EXTEND,
   TRUNCATE,
   SENDME,
-  DROP
+  DROP,
 }
 
 interface RelayCellLike {
@@ -28,7 +28,7 @@ interface RelayCellLike {
   data: BytesLike;
 }
 
-class RelayCell implements RelayCellLike {
+export class RelayCell implements RelayCellLike {
   public streamId: number;
   public digest: BytesLike;
   public len: number;
@@ -50,22 +50,25 @@ class RelayCell implements RelayCellLike {
     Buffer.from(this.data as any).copy(result, 11, 0, 498);
     return arrayify(result);
   }
-} 
+}
 
-class Cell {
+export class Cell {
   public circuitId: number;
   public command: CellCommand;
   public data: BytesLike | RelayCellLike;
   constructor(o: any) {
     this.circuitId = o.circuitId;
     this.command = o.command;
-    this.data = o.data
+    this.data = o.data;
   }
   encode(): BytesLike {
     const result = Buffer.alloc(512);
     result.writeUInt16BE(0, this.circuitId);
     result.writeUInt8(2, this.command);
-    return arrayify(Buffer.from((this.data instanceof RelayCell ? this.data.encode() : this.data) as any).copy(result, 3, 0, 509));
+    return arrayify(
+      Buffer.from(
+        (this.data instanceof RelayCell ? this.data.encode() : this.data) as any
+      ).copy(result, 3, 0, 509)
+    );
   }
 }
-   
