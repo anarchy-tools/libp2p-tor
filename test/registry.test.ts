@@ -4,7 +4,9 @@ import { Router } from "../src.ts/router";
 import { equals } from "uint8arrays";
 import { expect } from "chai";
 import { Cell, CellCommand } from "../src.ts/tor";
+import { encode, decode } from "it-length-prefixed";
 import { pipe } from "it-pipe";
+import { toString } from "uint8arrays";
 
 describe("registry", () => {
   let registry: Registry,
@@ -42,11 +44,15 @@ describe("registry", () => {
       proxies[0]._libp2p.getMultiaddrs()[0],
       "/tor/1.0.0/message"
     );
+    const { key, genSharedKey } = await router.build();
     const create = new Cell({
       circuitId: 1,
       command: CellCommand.CREATE,
-      data: (await router.build()).key,
+      data: key,
     });
-    pipe([create.encode()], stream.sink);
+    pipe([create.encode()], encode(), stream.sink);
+    console.log("sent cell");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.log(equals(proxies[0].keys[create.circuitId], key));
   });
 });

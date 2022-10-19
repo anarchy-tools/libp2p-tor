@@ -5,17 +5,20 @@ import type { ECDHKey } from "@libp2p/crypto/keys/interface";
 import { pipe } from "it-pipe";
 import { encode, decode } from "it-length-prefixed";
 import { Multiaddr } from "@multiformats/multiaddr";
-import { Cell, RelayCell } from "./tor";
+import { Cell, CellCommand, RelayCell } from "./tor";
 import { StreamHandler } from "@libp2p/interface-registrar";
+import { fromString } from "uint8arrays";
 import { Buffer } from "node:buffer";
 
 export class Proxy extends Libp2pWrapped {
   private permanentKey: ECDHKey;
   public registries: Multiaddr[];
+  public keys: Record<number, Uint8Array>;
 
   constructor(registries: Multiaddr[]) {
     super();
     this.registries = registries;
+    this.keys = {};
   }
 
   async run(
@@ -32,15 +35,17 @@ export class Proxy extends Libp2pWrapped {
   }
 
   handleTorMessage: StreamHandler = async ({ stream }) => {
-    const encodedCell = await pipe(stream, async (source) => {
-      let result = Buffer.alloc(512);
+    const cell = await pipe(stream.source, decode(), async (source) => {
+      let _cell: Cell;
       for await (const data of source) {
-        console.log(data.subarray());
-        result = Buffer.from(data.subarray());
+        _cell = Cell.from(data.subarray());
       }
-      return result;
+      return _cell;
     });
-    console.log(encodedCell);
+    if (cell.command == CellCommand.CREATE) {
+      cell.data = (cell.data as Uint8Array).slice(0, 65);
+      this.keys[`${cell.circuitId}`] = cell.data;
+    }
   };
 
   async register() {

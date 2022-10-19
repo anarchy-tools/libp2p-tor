@@ -43,10 +43,10 @@ export class RelayCell implements RelayCellLike {
   }
   encode() {
     const result = Buffer.alloc(509);
-    result.writeUInt16BE(0, this.streamId);
+    result.writeUInt16BE(this.streamId, 0);
     Buffer.from(this.digest as any).copy(result, 2, 0, 6);
-    result.writeUInt16BE(8, this.len);
-    result.writeUInt8(10, this.command);
+    result.writeUInt16BE(this.len, 8);
+    result.writeUInt8(this.command, 10);
     Buffer.from(this.data as any).copy(result, 11, 0, 498);
     return arrayify(result);
   }
@@ -76,5 +76,16 @@ export class Cell {
     return arrayify(result);
   }
 
-  from(Uint8Array) {}
+  static from(cell: Uint8Array): Cell {
+    const buf = Buffer.from(cell);
+    const command: CellCommand = buf.readUint8(2);
+    const circuitId = buf.readUint16BE();
+    const data = new Uint8Array(buf.subarray(3, 512));
+
+    return new Cell({
+      circuitId,
+      command,
+      data,
+    });
+  }
 }
