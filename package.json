@@ -40,6 +40,7 @@
     "it-map": "^2.0.0",
     "it-pipe": "^2.0.4",
     "libp2p": "0.38.0",
+    "lodash": "^4.17.21",
     "multiaddr": "^10.0.1",
     "peer-id": "^0.16.0",
     "uint8arrays": "^4.0.2"

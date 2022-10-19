@@ -1,14 +1,12 @@
 import { StreamHandler } from "@libp2p/interface-registrar";
-import { createLibp2p, Libp2p, Libp2pOptions } from "libp2p";
-import { createLibp2pNode } from "./libp2p.wrapper";
-import { fromString, toString } from "uint8arrays";
+import { Libp2pOptions } from "libp2p";
+import { Libp2pWrapped } from "./libp2p.wrapper";
+import { fromString } from "uint8arrays";
 import { encode, decode } from "it-length-prefixed";
 import { pipe } from "it-pipe";
-import { EventEmitter } from "node:events";
 
-export class Registry extends EventEmitter {
+export class Registry extends Libp2pWrapped {
   private relays: Record<string, any> = {};
-  public _libp2p: Libp2p;
   unregister: StreamHandler = async ({ connection }) => {
     delete this.relays[connection.remotePeer.toString()];
   };
@@ -38,7 +36,7 @@ export class Registry extends EventEmitter {
       });
     });
     this.relays[connection.remotePeer.toString()] = pubKey;
-    console.log("registered peer");
+    console.log("registered proxy");
   };
   run = async (
     options: Libp2pOptions = {
@@ -47,8 +45,7 @@ export class Registry extends EventEmitter {
       },
     }
   ) => {
-    this._libp2p = await createLibp2pNode(options);
-    await this._libp2p.start();
+    await super.run(options);
 
     this._libp2p.handle("/tor/1.0.0/register", this.register, {});
     this._libp2p.handle("/tor/1.0.0/unregister", this.unregister, {});

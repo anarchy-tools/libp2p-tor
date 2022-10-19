@@ -1,4 +1,4 @@
-import { arrayify, BytesLike } from "@ethersproject/bytes";
+import { arrayify } from "@ethersproject/bytes";
 import { Buffer } from "node:buffer";
 
 enum CellCommand {
@@ -22,18 +22,18 @@ enum RelayCellCommand {
 
 interface RelayCellLike {
   streamId: number;
-  digest: BytesLike;
+  digest: Uint8Array;
   len: number;
   command: RelayCellCommand;
-  data: BytesLike;
+  data: Uint8Array;
 }
 
 export class RelayCell implements RelayCellLike {
   public streamId: number;
-  public digest: BytesLike;
+  public digest: Uint8Array;
   public len: number;
   public command: RelayCellCommand;
-  public data: BytesLike;
+  public data: Uint8Array;
   constructor(o: any) {
     this.streamId = o.streamId;
     this.digest = o.digest;
@@ -55,13 +55,13 @@ export class RelayCell implements RelayCellLike {
 export class Cell {
   public circuitId: number;
   public command: CellCommand;
-  public data: BytesLike | RelayCellLike;
+  public data: Uint8Array | RelayCellLike;
   constructor(o: any) {
     this.circuitId = o.circuitId;
     this.command = o.command;
     this.data = o.data;
   }
-  encode(): BytesLike {
+  encode(): Uint8Array {
     const result = Buffer.alloc(512);
     result.writeUInt16BE(0, this.circuitId);
     result.writeUInt8(2, this.command);
