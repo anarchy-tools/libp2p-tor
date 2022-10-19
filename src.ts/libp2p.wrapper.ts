@@ -29,7 +29,6 @@ export class Libp2pWrapped extends EventEmitter {
   handle(protocol: string, handler: StreamHandler, options = {}) {
     return this._libp2p.handle(protocol, handler, options);
   }
-
   dialProtocol(peerId: Multiaddr | PeerId, protocol: string, options = {}) {
     //@ts-ignore
     return this._libp2p.dialProtocol(peerId, protocol, options);

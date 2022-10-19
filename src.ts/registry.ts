@@ -22,18 +22,16 @@ export class Registry extends Libp2pWrapped {
   };
 
   register: StreamHandler = async ({ connection, stream }) => {
-    const pubKey = await new Promise((resolve) => {
-      pipe(stream.source, decode(), async (source) => {
-        let key = Uint8Array.from([]);
-        let merged: Uint8Array;
-        for await (let data of source) {
-          merged = new Uint8Array(key.length + data.length);
-          merged.set(key);
-          merged.set(data.subarray(), key.length);
-          key = merged;
-        }
-        resolve(key);
-      });
+    const pubKey = await pipe(stream.source, decode(), async (source) => {
+      let key = Uint8Array.from([]);
+      let merged: Uint8Array;
+      for await (let data of source) {
+        merged = new Uint8Array(key.length + data.length);
+        merged.set(key);
+        merged.set(data.subarray(), key.length);
+        key = merged;
+      }
+      return key;
     });
     this.relays[connection.remotePeer.toString()] = pubKey;
     console.log("registered proxy");

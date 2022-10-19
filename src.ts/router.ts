@@ -1,6 +1,7 @@
 import { createLibp2pNode } from "./libp2p.wrapper";
 import { RelayCell, Cell } from "./tor";
 import { generateEphemeralKeyPair } from "@libp2p/crypto/keys";
+import { toString } from "uint8arrays";
 import { Multiaddr } from "@multiformats/multiaddr";
 import type { Libp2pOptions } from "libp2p";
 import { Libp2pWrapped } from "./libp2p.wrapper";
@@ -16,6 +17,10 @@ export class Router extends Libp2pWrapped {
     this.registries = registries;
   }
 
+  async build() {
+    return await generateEphemeralKeyPair("P-256");
+  }
+
   async fetchKeys() {
     this.proxies = await this.registries.reduce<
       Promise<{ id: string; publicKey: any }[]>
@@ -25,23 +30,24 @@ export class Router extends Libp2pWrapped {
         registry,
         "/tor/1.0.0/relays"
       );
-      const _results = await new Promise<
-        { publicKey: Uint8Array; id: string }[]
-      >((resolve) => {
-        pipe(stream.source, decode(), async function (source) {
+      const _results = await pipe(
+        stream.source,
+        decode(),
+        async function (source) {
           let str = "";
           for await (const data of source) {
             str += toString(data.subarray());
           }
           const _peers = JSON.parse(str);
-          resolve(
-            _peers.map(({ id, publicKey }: { id: string; publicKey: any }) => ({
+          return _peers.map(
+            ({ id, publicKey }: { id: string; publicKey: any }) => ({
               id,
               publicKey: Uint8Array.from(Object.values(publicKey)),
-            }))
+            })
           );
-        });
-      });
+        }
+      );
+
       return [...(await results), ..._results];
     }, Promise.resolve([]));
   }
