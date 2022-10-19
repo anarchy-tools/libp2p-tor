@@ -6,6 +6,7 @@ export enum CellCommand {
   CREATE,
   DESTROY,
   RELAY,
+  CREATED,
 }
 
 export enum RelayCellCommand {

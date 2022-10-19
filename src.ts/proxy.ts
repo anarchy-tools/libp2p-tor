@@ -46,6 +46,17 @@ export class Proxy extends Libp2pWrapped {
       cell.data = (cell.data as Uint8Array).slice(0, 65);
       this.keys[`${cell.circuitId}`] = cell.data;
     }
+    pipe(
+      [
+        new Cell({
+          circuitId: cell.circuitId,
+          command: CellCommand.CREATED,
+          data: Uint8Array.from([]),
+        }).encode(),
+      ],
+      encode(),
+      stream.sink
+    );
   };
 
   async register() {

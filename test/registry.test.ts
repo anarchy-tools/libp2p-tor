@@ -53,6 +53,14 @@ describe("registry", () => {
     pipe([create.encode()], encode(), stream.sink);
     console.log("sent cell");
     await new Promise((resolve) => setTimeout(resolve, 1000));
+    const encodedCell = await pipe(stream.source, decode(), async (source) => {
+      let b: Buffer;
+      for await (const data of source) {
+        b = Buffer.from(data.subarray());
+      }
+      return b;
+    });
+    console.log(encodedCell.readUint8(2));
     console.log(equals(proxies[0].keys[create.circuitId], key));
   });
 });
