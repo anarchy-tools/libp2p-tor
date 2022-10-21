@@ -8,7 +8,6 @@ import { Multiaddr } from "@multiformats/multiaddr";
 import { Cell, CellCommand, RelayCell } from "./tor";
 import { StreamHandler } from "@libp2p/interface-registrar";
 import { fromString } from "uint8arrays";
-import { Buffer } from "node:buffer";
 import * as crypto from "@libp2p/crypto";
 
 export class Proxy extends Libp2pWrapped {
@@ -79,13 +78,28 @@ export class Proxy extends Libp2pWrapped {
 
   async register() {
     await this.registries.reduce<any>(async (_a, registry) => {
-      const stream = await this.dialProtocol(registry, "/tor/1.0.0/register");
-      pipe([this.torKey.key], encode(), stream.sink);
-      await pipe(stream.source, decode(), async (source) => {
-        for await (const data of source) {
-          if (data.subarray()[0] != 1) throw new Error();
-        }
-      });
+      try {
+        const stream = await this.dialProtocol(registry, "/tor/1.0.0/register");
+        pipe(
+          [
+            fromString(
+              JSON.stringify({
+                key: this.torKey.key,
+                addr: this._libp2p.getMultiaddrs()[0].toString(),
+              })
+            ),
+          ],
+          encode(),
+          stream.sink
+        );
+        await pipe(stream.source, decode(), async (source) => {
+          for await (const data of source) {
+            if (data.subarray()[0] != 1) throw new Error();
+          }
+        });
+      } catch (e) {
+        console.log(e);
+      }
     }, Promise.resolve());
   }
 

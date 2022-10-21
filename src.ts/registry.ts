@@ -1,7 +1,7 @@
 import { StreamHandler } from "@libp2p/interface-registrar";
 import { Libp2pOptions } from "libp2p";
 import { Libp2pWrapped } from "./libp2p.wrapper";
-import { fromString } from "uint8arrays";
+import { fromString, toString } from "uint8arrays";
 import { encode, decode } from "it-length-prefixed";
 import { pipe } from "it-pipe";
 
@@ -12,6 +12,7 @@ export class Registry extends Libp2pWrapped {
   };
 
   listRelays: StreamHandler = async ({ stream }) => {
+    console.log("handling list");
     const keys = JSON.stringify(
       Object.entries(this.relays).map(([id, data]) => ({
         id,
@@ -22,22 +23,18 @@ export class Registry extends Libp2pWrapped {
   };
 
   register: StreamHandler = async ({ connection, stream }) => {
-    const pubKey = await pipe(stream.source, decode(), async (source) => {
-      let key = Uint8Array.from([]);
-      let merged: Uint8Array;
+    console.log("data received");
+    const peerData = await pipe(stream.source, decode(), async (source) => {
+      let str = "";
       for await (let data of source) {
-        merged = new Uint8Array(key.length + data.length);
-        merged.set(key);
-        merged.set(data.subarray(), key.length);
-        key = merged;
+        str += toString(data.subarray());
       }
-      return key;
+      return JSON.parse(str);
     });
     this.relays[connection.remotePeer.toString()] = {
-      publicKey: pubKey,
-      addr: connection.remoteAddr.toString(),
+      publicKey: new Uint8Array(peerData.key.data),
+      addr: peerData.addr,
     };
-    console.log("registered proxy");
     pipe([Uint8Array.from([1])], encode(), stream.sink);
   };
   run = async (
@@ -49,6 +46,7 @@ export class Registry extends Libp2pWrapped {
   ) => {
     await super.run(options);
 
+    console.log("running node");
     await this.handle("/tor/1.0.0/register", this.register);
     await this.handle("/tor/1.0.0/unregister", this.unregister);
     await this.handle("/tor/1.0.0/relays", this.listRelays);

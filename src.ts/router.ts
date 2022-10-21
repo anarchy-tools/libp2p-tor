@@ -1,4 +1,3 @@
-import { createLibp2pNode } from "./libp2p.wrapper";
 import { RelayCell, Cell, CellCommand } from "./tor";
 import { generateEphemeralKeyPair } from "@libp2p/crypto/keys";
 import { toString } from "uint8arrays";
@@ -10,8 +9,6 @@ import { encode, decode } from "it-length-prefixed";
 import { ECDHKey } from "@libp2p/crypto/keys/interface";
 import * as crypto from "@libp2p/crypto";
 import { Buffer } from "node:buffer";
-import { peerIdFromString } from "@libp2p/peer-id";
-import type { PeerId } from "@libp2p/interface-peer-id";
 import { multiaddr } from "multiaddr";
 
 export class Router extends Libp2pWrapped {
@@ -56,7 +53,6 @@ export class Router extends Libp2pWrapped {
       command: CellCommand.CREATE,
       data: key,
     });
-
     const stream = await this.dialProtocol(node.hop, "/tor/1.0.0/message");
     pipe([create.encode()], encode(), stream.sink);
     const cell = await pipe(stream.source, decode(), async (source) => {
@@ -65,6 +61,7 @@ export class Router extends Libp2pWrapped {
         _cell = Cell.from(Buffer.from(await node.aes.decrypt(data.subarray())));
         break;
       }
+      return _cell;
     });
     return cell;
   }
@@ -73,37 +70,41 @@ export class Router extends Libp2pWrapped {
     this.proxies = await this.registries.reduce<
       Promise<{ id: string; addr: Multiaddr; publicKey: any }[]>
     >(async (results, registry) => {
-      const stream = await this.dialProtocol(registry, "/tor/1.0.0/relays");
-      const _results = await pipe(
-        stream.source,
-        decode(),
-        async function (source) {
-          let str = "";
-          for await (const data of source) {
-            str += toString(data.subarray());
-          }
-          const _peers = JSON.parse(str);
-          return _peers.map(
-            ({
-              id,
-              addr,
-              publicKey,
-            }: {
-              id: string;
-              publicKey: any;
-              addr: string;
-            }) => {
-              return {
-                id,
-                addr: multiaddr(addr).encapsulate(`/p2p/${id}`),
-                publicKey: Uint8Array.from(Object.values(publicKey)),
-              };
+      try {
+        const stream = await this.dialProtocol(registry, "/tor/1.0.0/relays");
+        const _results = await pipe(
+          stream.source,
+          decode(),
+          async function (source) {
+            let str = "";
+            for await (const data of source) {
+              str += toString(data.subarray());
             }
-          );
-        }
-      );
+            const _peers = JSON.parse(str);
+            return _peers.map(
+              ({
+                id,
+                addr,
+                publicKey,
+              }: {
+                id: string;
+                publicKey: any;
+                addr: string;
+              }) => {
+                return {
+                  id,
+                  addr: multiaddr(addr),
+                  publicKey: Uint8Array.from(Object.values(publicKey)),
+                };
+              }
+            );
+          }
+        );
 
-      return [...(await results), ..._results];
+        return [...(await results), ..._results];
+      } catch (e) {
+        console.log(e);
+      }
     }, Promise.resolve([]));
   }
 
