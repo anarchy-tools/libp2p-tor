@@ -1,6 +1,6 @@
 import type { Libp2p, Libp2pOptions } from "libp2p";
 import { createLibp2p } from "libp2p";
-import { TCP } from "@libp2p/tcp";
+import { tcp } from "@libp2p/tcp";
 import { mplex } from "@libp2p/mplex";
 import { Noise } from "@chainsafe/libp2p-noise";
 import { EventEmitter } from "node:events";
@@ -11,9 +11,9 @@ import { Multiaddr } from "@multiformats/multiaddr";
 export async function createLibp2pNode(
   options: Libp2pOptions
 ): Promise<Libp2p> {
-  options.transports = [new TCP()];
+  options.transports = [tcp()()];
   //@ts-ignore
-  options.connectionEncryption = [new Noise()];
+  options.connectionEncryption = [() => new Noise()];
   //@ts-ignore
   options.streamMuxers = [mplex()()];
 
@@ -26,7 +26,11 @@ export class Libp2pWrapped extends EventEmitter {
     this._libp2p = await createLibp2pNode(options);
     await this._libp2p.start();
   }
-  handle(protocol: string, handler: StreamHandler, options = {}) {
+  handle(
+    protocol: string,
+    handler: StreamHandler,
+    options = { maxInboundStreams: 10, maxOutboundStreams: 10 }
+  ) {
     return this._libp2p.handle(protocol, handler, options);
   }
   dialProtocol(peerId: Multiaddr | PeerId, protocol: string, options = {}) {

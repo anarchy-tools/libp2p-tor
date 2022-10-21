@@ -13,9 +13,9 @@ export class Registry extends Libp2pWrapped {
 
   listRelays: StreamHandler = async ({ stream }) => {
     const keys = JSON.stringify(
-      Object.entries(this.relays).map(([id, publicKey]) => ({
+      Object.entries(this.relays).map(([id, data]) => ({
         id,
-        publicKey,
+        ...data,
       }))
     );
     pipe([fromString(keys)], encode(), stream.sink);
@@ -33,8 +33,12 @@ export class Registry extends Libp2pWrapped {
       }
       return key;
     });
-    this.relays[connection.remotePeer.toString()] = pubKey;
+    this.relays[connection.remotePeer.toString()] = {
+      publicKey: pubKey,
+      addr: connection.remoteAddr.toString(),
+    };
     console.log("registered proxy");
+    pipe([Uint8Array.from([1])], encode(), stream.sink);
   };
   run = async (
     options: Libp2pOptions = {
@@ -45,8 +49,8 @@ export class Registry extends Libp2pWrapped {
   ) => {
     await super.run(options);
 
-    this._libp2p.handle("/tor/1.0.0/register", this.register, {});
-    this._libp2p.handle("/tor/1.0.0/unregister", this.unregister, {});
-    this._libp2p.handle("/tor/1.0.0/relays", this.listRelays, {});
+    await this.handle("/tor/1.0.0/register", this.register);
+    await this.handle("/tor/1.0.0/unregister", this.unregister);
+    await this.handle("/tor/1.0.0/relays", this.listRelays);
   };
 }

@@ -9,15 +9,21 @@ import { Cell, CellCommand, RelayCell } from "./tor";
 import { StreamHandler } from "@libp2p/interface-registrar";
 import { fromString } from "uint8arrays";
 import { Buffer } from "node:buffer";
+import * as crypto from "@libp2p/crypto";
 
 export class Proxy extends Libp2pWrapped {
-  private permanentKey: ECDHKey;
+  private torKey: ECDHKey;
   public registries: Multiaddr[];
-  public keys: Record<number, Uint8Array>;
+  public pubKeys: Record<number, Uint8Array>;
+  private keys: Record<
+    number,
+    { sharedKey: Uint8Array; aes: crypto.aes.AESCipher }
+  >;
 
   constructor(registries: Multiaddr[]) {
     super();
     this.registries = registries;
+    this.pubKeys = {};
     this.keys = {};
   }
 
@@ -29,9 +35,9 @@ export class Proxy extends Libp2pWrapped {
     }
   ) {
     await super.run(options);
-    this.permanentKey = await generateEphemeralKeyPair("P-256");
+    this.torKey = await generateEphemeralKeyPair("P-256");
     await this.register();
-    this._libp2p.handle("/tor/1.0.0/message", this.handleTorMessage);
+    await this.handle("/tor/1.0.0/message", this.handleTorMessage);
   }
 
   handleTorMessage: StreamHandler = async ({ stream }) => {
@@ -44,33 +50,46 @@ export class Proxy extends Libp2pWrapped {
     });
     if (cell.command == CellCommand.CREATE) {
       cell.data = (cell.data as Uint8Array).slice(0, 65);
-      this.keys[`${cell.circuitId}`] = cell.data;
+      this.pubKeys[`${cell.circuitId}`] = cell.data;
+      const sharedKey = await this.torKey.genSharedKey(cell.data);
+      const key = (this.keys[`${cell.circuitId}`] = {
+        sharedKey,
+        aes: await crypto.aes.create(
+          sharedKey,
+          Uint8Array.from([
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+          ])
+        ),
+      });
+      pipe(
+        [
+          await key.aes.encrypt(
+            new Cell({
+              circuitId: cell.circuitId,
+              command: CellCommand.CREATED,
+              data: Uint8Array.from([]),
+            }).encode()
+          ),
+        ],
+        encode(),
+        stream.sink
+      );
     }
-    pipe(
-      [
-        new Cell({
-          circuitId: cell.circuitId,
-          command: CellCommand.CREATED,
-          data: Uint8Array.from([]),
-        }).encode(),
-      ],
-      encode(),
-      stream.sink
-    );
   };
 
   async register() {
     await this.registries.reduce<any>(async (_a, registry) => {
-      const stream = await this._libp2p.dialProtocol(
-        //@ts-ignore
-        registry,
-        "/tor/1.0.0/register"
-      );
-      pipe([this.permanentKey.key], encode(), stream.sink);
+      const stream = await this.dialProtocol(registry, "/tor/1.0.0/register");
+      pipe([this.torKey.key], encode(), stream.sink);
+      await pipe(stream.source, decode(), async (source) => {
+        for await (const data of source) {
+          if (data.subarray()[0] != 1) throw new Error();
+        }
+      });
     }, Promise.resolve());
   }
 
   key() {
-    return this.permanentKey.key;
+    return this.torKey.key;
   }
 }
