@@ -35,7 +35,13 @@ export class RelayCell implements RelayCellLike {
   public len: number;
   public command: RelayCellCommand;
   public data: Uint8Array;
-  constructor(o: any) {
+  constructor(o: {
+    streamId: number;
+    command: RelayCellCommand;
+    digest: Uint8Array;
+    len: number;
+    data: Uint8Array;
+  }) {
     this.streamId = o.streamId;
     this.digest = o.digest;
     this.len = o.len;
@@ -50,6 +56,16 @@ export class RelayCell implements RelayCellLike {
     result.writeUInt8(this.command, 10);
     Buffer.from(this.data as any).copy(result, 11, 0, 498);
     return arrayify(result);
+  }
+  static from(relayCell: Uint8Array): RelayCell {
+    const buf = Buffer.from(relayCell);
+    return new RelayCell({
+      streamId: buf.readUint16BE(),
+      digest: buf.subarray(2, 8),
+      len: buf.readUint16BE(8),
+      command: buf.readUint8(10),
+      data: buf.subarray(11, 509),
+    });
   }
 }
 

@@ -9,7 +9,8 @@ import { Cell, CellCommand, RelayCell } from "./tor";
 import { StreamHandler } from "@libp2p/interface-registrar";
 import { fromString } from "uint8arrays";
 import * as crypto from "@libp2p/crypto";
-import type { PrivateKey, PublicKey } from "@libp2p/interface-keys";
+import type { PrivateKey } from "@libp2p/interface-keys";
+import { iv } from "./constants";
 
 export class Proxy extends Libp2pWrapped {
   private torKey: PrivateKey;
@@ -63,17 +64,13 @@ export class Proxy extends Libp2pWrapped {
       this.keys[`${cell.circuitId}`] = {
         sharedKey,
         key: ecdhKey,
-        aes: await crypto.aes.create(
-          sharedKey,
-          Uint8Array.from([
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-          ])
-        ),
+        aes: await crypto.aes.create(sharedKey, iv),
         publicKey: cellData,
       };
 
       const hmac = await crypto.hmac.create("SHA256", sharedKey);
       const digest = await hmac.digest(sharedKey);
+      console.log(digest.length);
       const data = new Uint8Array(digest.length + ecdhKey.key.length);
       data.set(ecdhKey.key);
       data.set(digest, ecdhKey.key.length);

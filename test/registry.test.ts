@@ -40,7 +40,6 @@ describe("registry", () => {
   });
 
   it("should perform a handshake with relays", async () => {
-    const data = await router.build();
-    expect(data.command).to.be.equal(4);
+    await router.build(2);
   });
 });

@@ -1,4 +1,4 @@
-import { RelayCell, Cell, CellCommand } from "./tor";
+import { RelayCell, Cell, CellCommand, RelayCellCommand } from "./tor";
 import { generateEphemeralKeyPair } from "@libp2p/crypto/keys";
 import { toString } from "uint8arrays";
 import { Multiaddr } from "@multiformats/multiaddr";
@@ -28,10 +28,10 @@ export class Router extends Libp2pWrapped {
   public keys: Record<
     number,
     {
-      ecdhKey: ECDHKey;
-      hop: Multiaddr;
-      key: Uint8Array;
-      aes: crypto.aes.AESCipher;
+      ecdhKeys: ECDHKey[];
+      hops: Multiaddr[];
+      keys: Uint8Array[];
+      aes: crypto.aes.AESCipher[];
     }
   >;
 
@@ -42,6 +42,51 @@ export class Router extends Libp2pWrapped {
   }
 
   async build(length: number = 1) {
+    const circId = await this.create();
+  }
+
+  async extend(circId: number) {
+    const endProxy = this.proxies.filter(
+      (d) => !this.keys[circId].hops.includes(d.addr)
+    )[0];
+    const { key, genSharedKey } = await generateEphemeralKeyPair("P-256");
+    this.keys[circId].ecdhKeys.push({ key, genSharedKey });
+    this.keys[circId].hops.push(endProxy.addr);
+    const encryptedKey = Uint8Array.from(await endProxy.publicKey.encrypt(key));
+    const hmac = await crypto.hmac.create(
+      "SHA256",
+      this.keys[circId].keys[this.keys[circId].keys.length - 1]
+    );
+    const digest = await hmac.digest(encryptedKey);
+    const _relay = new Cell({
+      circuitId: circId,
+      command: CellCommand.RELAY,
+      data: new RelayCell({
+        streamId: circId,
+        command: RelayCellCommand.EXTEND,
+        data: encryptedKey,
+        digest,
+        len: digest.length,
+      }),
+    }).encode();
+    const encryptedRelay = await [
+      ...this.keys[circId].aes.slice(0, this.keys[circId].aes.length - 1),
+    ]
+      .reverse()
+      .reduce(async (a, aes, i) => {
+        return await aes.encrypt(await a);
+      }, Promise.resolve(_relay));
+    const relay = new Cell({
+      circuitId: circId,
+      command: CellCommand.RELAY,
+      data: encryptedRelay,
+    }).encode();
+    const proxy = this.keys[circId].hops[0];
+    const stream = await this.dialProtocol(proxy, "/tor/1.0.0/message");
+    pipe([relay], encode(), stream.sink);
+  }
+
+  async create() {
     const circId = Buffer.from(crypto.randomBytes(2)).readUint16BE();
     const { genSharedKey, key } = await generateEphemeralKeyPair("P-256");
     const proxy = this.proxies[0];
@@ -69,15 +114,17 @@ export class Router extends Libp2pWrapped {
       throw new Error("wrong digest");
     }
     this.keys[circId] = {
-      ecdhKey: {
-        genSharedKey,
-        key,
-      },
-      key: sharedKey,
-      hop: proxy.addr,
-      aes: await crypto.aes.create(sharedKey, iv),
+      ecdhKeys: [
+        {
+          genSharedKey,
+          key,
+        },
+      ],
+      keys: [sharedKey],
+      hops: [proxy.addr],
+      aes: [await crypto.aes.create(sharedKey, iv)],
     };
-    return cell;
+    return circId;
   }
 
   async fetchKeys() {
