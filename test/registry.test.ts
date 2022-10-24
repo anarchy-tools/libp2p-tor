@@ -36,7 +36,7 @@ describe("registry", () => {
     const pubKey = router.proxies.filter(
       (d) => d.id == proxy._libp2p.peerId.toString()
     )[0].publicKey;
-    expect(equals(pubKey, proxy.key())).to.equal(true);
+    expect(equals(pubKey.marshal(), proxy.key())).to.equal(true);
   });
 
   it("should perform a handshake with relays", async () => {

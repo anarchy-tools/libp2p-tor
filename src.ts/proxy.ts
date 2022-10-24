@@ -9,21 +9,26 @@ import { Cell, CellCommand, RelayCell } from "./tor";
 import { StreamHandler } from "@libp2p/interface-registrar";
 import { fromString } from "uint8arrays";
 import * as crypto from "@libp2p/crypto";
+import type { PrivateKey, PublicKey } from "@libp2p/interface-keys";
 
 export class Proxy extends Libp2pWrapped {
-  private torKey: ECDHKey;
+  private torKey: PrivateKey;
   public registries: Multiaddr[];
-  public pubKeys: Record<number, Uint8Array>;
   private keys: Record<
     number,
-    { sharedKey: Uint8Array; aes: crypto.aes.AESCipher }
+    {
+      sharedKey: Uint8Array;
+      key: ECDHKey;
+      aes: crypto.aes.AESCipher;
+      publicKey: Uint8Array;
+    }
   >;
 
   constructor(registries: Multiaddr[]) {
     super();
     this.registries = registries;
-    this.pubKeys = {};
     this.keys = {};
+    this.torKey = null;
   }
 
   async run(
@@ -34,7 +39,7 @@ export class Proxy extends Libp2pWrapped {
     }
   ) {
     await super.run(options);
-    this.torKey = await generateEphemeralKeyPair("P-256");
+    this.torKey = await crypto.keys.generateKeyPair("RSA", 1024);
     await this.register();
     await this.handle("/tor/1.0.0/message", this.handleTorMessage);
   }
@@ -48,27 +53,37 @@ export class Proxy extends Libp2pWrapped {
       return _cell;
     });
     if (cell.command == CellCommand.CREATE) {
-      cell.data = (cell.data as Uint8Array).slice(0, 65);
-      this.pubKeys[`${cell.circuitId}`] = cell.data;
-      const sharedKey = await this.torKey.genSharedKey(cell.data);
-      const key = (this.keys[`${cell.circuitId}`] = {
+      //@ts-ignore
+      const cellData: Uint8Array = Uint8Array.from(
+        //@ts-ignore
+        await this.torKey.decrypt((cell.data as Uint8Array).slice(0, 128))
+      );
+      const ecdhKey = await generateEphemeralKeyPair("P-256");
+      const sharedKey = await ecdhKey.genSharedKey(cellData);
+      this.keys[`${cell.circuitId}`] = {
         sharedKey,
+        key: ecdhKey,
         aes: await crypto.aes.create(
           sharedKey,
           Uint8Array.from([
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
           ])
         ),
-      });
+        publicKey: cellData,
+      };
+
+      const hmac = await crypto.hmac.create("SHA256", sharedKey);
+      const digest = await hmac.digest(sharedKey);
+      const data = new Uint8Array(digest.length + ecdhKey.key.length);
+      data.set(ecdhKey.key);
+      data.set(digest, ecdhKey.key.length);
       pipe(
         [
-          await key.aes.encrypt(
-            new Cell({
-              circuitId: cell.circuitId,
-              command: CellCommand.CREATED,
-              data: Uint8Array.from([]),
-            }).encode()
-          ),
+          new Cell({
+            circuitId: cell.circuitId,
+            command: CellCommand.CREATED,
+            data,
+          }).encode(),
         ],
         encode(),
         stream.sink
@@ -84,7 +99,7 @@ export class Proxy extends Libp2pWrapped {
           [
             fromString(
               JSON.stringify({
-                key: this.torKey.key,
+                key: this.torKey.public.marshal(),
                 addr: this._libp2p.getMultiaddrs()[0].toString(),
               })
             ),
@@ -104,6 +119,6 @@ export class Proxy extends Libp2pWrapped {
   }
 
   key() {
-    return this.torKey.key;
+    return this.torKey.public.marshal();
   }
 }

@@ -9,11 +9,22 @@ import { encode, decode } from "it-length-prefixed";
 import { ECDHKey } from "@libp2p/crypto/keys/interface";
 import * as crypto from "@libp2p/crypto";
 import { Buffer } from "node:buffer";
+import { iv } from "./constants";
+import { equals } from "uint8arrays";
 import { multiaddr } from "multiaddr";
+
+const rsa = crypto.keys.supportedKeys.rsa;
 
 export class Router extends Libp2pWrapped {
   public registries: Multiaddr[];
-  public proxies: { publicKey: Uint8Array; id: string; addr: Multiaddr }[];
+  public proxies: {
+    publicKey: {
+      encrypt: (bytes: Uint8Array) => Promise<Buffer>;
+      marshal: () => Uint8Array;
+    };
+    id: string;
+    addr: Multiaddr;
+  }[];
   public keys: Record<
     number,
     {
@@ -33,36 +44,39 @@ export class Router extends Libp2pWrapped {
   async build(length: number = 1) {
     const circId = Buffer.from(crypto.randomBytes(2)).readUint16BE();
     const { genSharedKey, key } = await generateEphemeralKeyPair("P-256");
-    //@TODO: change
     const proxy = this.proxies[0];
-    const sharedKey = await genSharedKey(proxy.publicKey);
-    const node = (this.keys[circId] = {
+    const encryptedKey = Uint8Array.from(await proxy.publicKey.encrypt(key));
+    const create = new Cell({
+      circuitId: circId,
+      command: CellCommand.CREATE,
+      data: encryptedKey,
+    });
+    const stream = await this.dialProtocol(proxy.addr, "/tor/1.0.0/message");
+    pipe([create.encode()], encode(), stream.sink);
+    const cell = await pipe(stream.source, decode(), async (source) => {
+      let _cell: Cell;
+      for await (const data of source) {
+        _cell = Cell.from(Buffer.from(data.subarray()));
+        break;
+      }
+      return _cell;
+    });
+    const proxyEcdhKey = (cell.data as Uint8Array).slice(0, 65);
+    const digest = (cell.data as Uint8Array).slice(65, 65 + 32);
+    const sharedKey = await genSharedKey(proxyEcdhKey);
+    const hmac = await crypto.hmac.create("SHA256", sharedKey);
+    if (!equals(await hmac.digest(sharedKey), digest)) {
+      throw new Error("wrong digest");
+    }
+    this.keys[circId] = {
       ecdhKey: {
         genSharedKey,
         key,
       },
       key: sharedKey,
       hop: proxy.addr,
-      aes: await crypto.aes.create(
-        sharedKey,
-        Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
-      ),
-    });
-    const create = new Cell({
-      circuitId: 1,
-      command: CellCommand.CREATE,
-      data: key,
-    });
-    const stream = await this.dialProtocol(node.hop, "/tor/1.0.0/message");
-    pipe([create.encode()], encode(), stream.sink);
-    const cell = await pipe(stream.source, decode(), async (source) => {
-      let _cell: Cell;
-      for await (const data of source) {
-        _cell = Cell.from(Buffer.from(await node.aes.decrypt(data.subarray())));
-        break;
-      }
-      return _cell;
-    });
+      aes: await crypto.aes.create(sharedKey, iv),
+    };
     return cell;
   }
 
@@ -94,7 +108,9 @@ export class Router extends Libp2pWrapped {
                 return {
                   id,
                   addr: multiaddr(addr),
-                  publicKey: Uint8Array.from(Object.values(publicKey)),
+                  publicKey: rsa.unmarshalRsaPublicKey(
+                    Uint8Array.from(Object.values(publicKey))
+                  ),
                 };
               }
             );

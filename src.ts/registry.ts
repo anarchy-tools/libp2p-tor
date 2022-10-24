@@ -32,7 +32,7 @@ export class Registry extends Libp2pWrapped {
       return JSON.parse(str);
     });
     this.relays[connection.remotePeer.toString()] = {
-      publicKey: new Uint8Array(peerData.key.data),
+      publicKey: new Uint8Array(Object.values(peerData.key)),
       addr: peerData.addr,
     };
     pipe([Uint8Array.from([1])], encode(), stream.sink);
