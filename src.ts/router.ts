@@ -43,6 +43,7 @@ export class Router extends Libp2pWrapped {
 
   async build(length: number = 1) {
     const circId = await this.create();
+    await this.extend(circId);
   }
 
   async extend(circId: number) {
@@ -52,28 +53,36 @@ export class Router extends Libp2pWrapped {
     const { key, genSharedKey } = await generateEphemeralKeyPair("P-256");
     this.keys[circId].ecdhKeys.push({ key, genSharedKey });
     this.keys[circId].hops.push(endProxy.addr);
-    const encryptedKey = Uint8Array.from(await endProxy.publicKey.encrypt(key));
+    const hop = endProxy.addr.bytes;
+    const encryptedKey = Uint8Array.from(
+      await endProxy.publicKey.encrypt(Uint8Array.from(key))
+    );
+    const relayCellData = new Uint8Array(encryptedKey.length + hop.length);
+    relayCellData.set(encryptedKey);
+    relayCellData.set(hop, encryptedKey.length);
+    console.log(relayCellData.length, encryptedKey.length);
     const hmac = await crypto.hmac.create(
       "SHA256",
       this.keys[circId].keys[this.keys[circId].keys.length - 1]
     );
-    const digest = await hmac.digest(encryptedKey);
+    const digest = await hmac.digest(relayCellData);
+    console.log(digest.length);
     const _relay = new Cell({
       circuitId: circId,
       command: CellCommand.RELAY,
       data: new RelayCell({
         streamId: circId,
         command: RelayCellCommand.EXTEND,
-        data: encryptedKey,
+        data: relayCellData,
         digest,
-        len: digest.length,
+        len: relayCellData.length,
       }),
     }).encode();
     const encryptedRelay = await [
       ...this.keys[circId].aes.slice(0, this.keys[circId].aes.length - 1),
     ]
       .reverse()
-      .reduce(async (a, aes, i) => {
+      .reduce(async (a, aes) => {
         return await aes.encrypt(await a);
       }, Promise.resolve(_relay));
     const relay = new Cell({

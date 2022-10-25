@@ -4,13 +4,15 @@ import { generateEphemeralKeyPair } from "@libp2p/crypto/keys";
 import type { ECDHKey } from "@libp2p/crypto/keys/interface";
 import { pipe } from "it-pipe";
 import { encode, decode } from "it-length-prefixed";
-import { Multiaddr } from "@multiformats/multiaddr";
-import { Cell, CellCommand, RelayCell } from "./tor";
+import { Multiaddr, multiaddr } from "@multiformats/multiaddr";
+import { Cell, CellCommand, RelayCell, RelayCellCommand } from "./tor";
 import { StreamHandler } from "@libp2p/interface-registrar";
-import { fromString } from "uint8arrays";
+import { fromString, equals } from "uint8arrays";
 import * as crypto from "@libp2p/crypto";
 import type { PrivateKey } from "@libp2p/interface-keys";
 import { iv } from "./constants";
+
+const createHmac = crypto.hmac.create;
 
 export class Proxy extends Libp2pWrapped {
   private torKey: PrivateKey;
@@ -22,6 +24,8 @@ export class Proxy extends Libp2pWrapped {
       key: ECDHKey;
       aes: crypto.aes.AESCipher;
       publicKey: Uint8Array;
+      hmac: Awaited<ReturnType<typeof createHmac>>;
+      nextHop: any;
     }
   >;
 
@@ -54,39 +58,101 @@ export class Proxy extends Libp2pWrapped {
       return _cell;
     });
     if (cell.command == CellCommand.CREATE) {
-      //@ts-ignore
       const cellData: Uint8Array = Uint8Array.from(
         //@ts-ignore
         await this.torKey.decrypt((cell.data as Uint8Array).slice(0, 128))
       );
-      const ecdhKey = await generateEphemeralKeyPair("P-256");
-      const sharedKey = await ecdhKey.genSharedKey(cellData);
-      this.keys[`${cell.circuitId}`] = {
-        sharedKey,
-        key: ecdhKey,
-        aes: await crypto.aes.create(sharedKey, iv),
-        publicKey: cellData,
-      };
-
-      const hmac = await crypto.hmac.create("SHA256", sharedKey);
-      const digest = await hmac.digest(sharedKey);
-      console.log(digest.length);
-      const data = new Uint8Array(digest.length + ecdhKey.key.length);
-      data.set(ecdhKey.key);
-      data.set(digest, ecdhKey.key.length);
       pipe(
         [
           new Cell({
             circuitId: cell.circuitId,
             command: CellCommand.CREATED,
-            data,
+            data: await this.handleCreateCell(cell.circuitId, cellData),
           }).encode(),
         ],
         encode(),
         stream.sink
       );
+    } else if (cell.command == CellCommand.RELAY) {
+      if (this.keys[`${cell.circuitId}`].nextHop == undefined) {
+        const cellData = await this.handleRelayCell(
+          cell.circuitId,
+          cell.data as Uint8Array
+        );
+        pipe([cellData], encode(), stream.sink);
+      }
     }
   };
+
+  async handleRelayCell(circuitId: number, cellData: Uint8Array) {
+    const { aes, hmac } = this.keys[`${circuitId}`];
+    const relayCell = RelayCell.from(await aes.decrypt(cellData));
+    const relayCellData = relayCell.data.subarray(0, relayCell.len);
+    const hash = await hmac.digest(relayCellData);
+    if (!equals(Uint8Array.from(hash.subarray(0, 6)), relayCell.digest))
+      throw new Error("digest does not match");
+    if (relayCell.command == RelayCellCommand.EXTEND) {
+      const encryptedKey = relayCellData.slice(0, 128);
+      const multiAddr = multiaddr(relayCellData.slice(128));
+      const hop = (this.keys[`${circuitId}`].nextHop = {
+        multiaddr: multiAddr,
+        circuitId: Buffer.from(crypto.randomBytes(16)).readUint16BE(),
+      });
+      const stream = await this.dialProtocol(multiAddr, "/tor/1.0.0/message");
+      pipe(
+        [
+          new Cell({
+            command: CellCommand.CREATE,
+            data: encryptedKey,
+            circuitId: hop.circuitId,
+          }).encode(),
+        ],
+        encode(),
+        stream.sink
+      );
+      const returnData = await pipe(stream.source, decode(), async (source) => {
+        let result: Uint8Array;
+        for await (const data of source) {
+          result = data.subarray();
+        }
+        return result;
+      });
+      const returnDigest = await hmac.digest(returnData);
+      return new Cell({
+        circuitId,
+        command: CellCommand.RELAY,
+        data: await aes.encrypt(
+          new RelayCell({
+            data: returnData,
+            command: RelayCellCommand.EXTENDED,
+            streamId: circuitId,
+            len: returnData.length,
+            digest: returnDigest,
+          }).encode()
+        ),
+      }).encode();
+    }
+  }
+
+  async handleCreateCell(circuitId: number, cellData: Uint8Array) {
+    const ecdhKey = await generateEphemeralKeyPair("P-256");
+    const sharedKey = await ecdhKey.genSharedKey(cellData);
+    const hmac = await createHmac("SHA256", sharedKey);
+    this.keys[`${circuitId}`] = {
+      sharedKey,
+      key: ecdhKey,
+      aes: await crypto.aes.create(sharedKey, iv),
+      publicKey: cellData,
+      hmac,
+      nextHop: undefined,
+    };
+
+    const digest = await hmac.digest(sharedKey);
+    const data = new Uint8Array(digest.length + ecdhKey.key.length);
+    data.set(ecdhKey.key);
+    data.set(digest, ecdhKey.key.length);
+    return data;
+  }
 
   async register() {
     await this.registries.reduce<any>(async (_a, registry) => {

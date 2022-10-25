@@ -19,6 +19,7 @@ export enum RelayCellCommand {
   TRUNCATE,
   SENDME,
   DROP,
+  EXTENDED,
 }
 
 interface RelayCellLike {
@@ -52,6 +53,7 @@ export class RelayCell implements RelayCellLike {
     const result = Buffer.alloc(509);
     result.writeUInt16BE(this.streamId, 0);
     Buffer.from(this.digest as any).copy(result, 2, 0, 6);
+    console.log(Buffer.from(this.digest), result);
     result.writeUInt16BE(this.len, 8);
     result.writeUInt8(this.command, 10);
     Buffer.from(this.data as any).copy(result, 11, 0, 498);
