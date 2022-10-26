@@ -25,7 +25,10 @@ export class Proxy extends Libp2pWrapped {
       aes: crypto.aes.AESCipher;
       publicKey: Uint8Array;
       hmac: Awaited<ReturnType<typeof createHmac>>;
-      nextHop: any;
+      nextHop: {
+        multiaddr: Multiaddr;
+        circuitId: number;
+      };
     }
   >;
 
@@ -57,36 +60,65 @@ export class Proxy extends Libp2pWrapped {
       }
       return _cell;
     });
+    let returnCell: Cell;
     if (cell.command == CellCommand.CREATE) {
       const cellData: Uint8Array = Uint8Array.from(
         //@ts-ignore
         await this.torKey.decrypt((cell.data as Uint8Array).slice(0, 128))
       );
-      pipe(
-        [
-          new Cell({
-            circuitId: cell.circuitId,
-            command: CellCommand.CREATED,
-            data: await this.handleCreateCell(cell.circuitId, cellData),
-          }).encode(),
-        ],
-        encode(),
-        stream.sink
-      );
+      returnCell = new Cell({
+        circuitId: cell.circuitId,
+        command: CellCommand.CREATED,
+        data: await this.handleCreateCell(cell.circuitId, cellData),
+      });
     } else if (cell.command == CellCommand.RELAY) {
-      if (this.keys[`${cell.circuitId}`].nextHop == undefined) {
-        const cellData = await this.handleRelayCell(
-          cell.circuitId,
-          cell.data as Uint8Array
-        );
+      const aes = this.keys[`${cell.circuitId}`].aes;
+      const relayCell = RelayCell.from(
+        await aes.decrypt(cell.data as Uint8Array)
+      );
+      const nextHop = this.keys[`${cell.circuitId}`].nextHop;
+      if (nextHop == undefined) {
+        const cellData = await this.handleRelayCell(cell.circuitId, relayCell);
         pipe([cellData], encode(), stream.sink);
+      } else {
+        const nextHopStream = await this.dialProtocol(
+          nextHop.multiaddr,
+          "/tor/1.0.0/message"
+        );
+        pipe(
+          [
+            new Cell({
+              circuitId: nextHop.circuitId,
+              data: relayCell.encode(),
+              command: CellCommand.RELAY,
+            }).encode(),
+          ],
+          encode(),
+          nextHopStream.sink
+        );
+        const nextCell = await pipe(
+          nextHopStream.source,
+          decode(),
+          async (source) => {
+            let _cell: Cell;
+            for await (const data of source) {
+              _cell = Cell.from(data.subarray());
+            }
+            return _cell;
+          }
+        );
+        returnCell = new Cell({
+          command: CellCommand.RELAY,
+          circuitId: cell.circuitId,
+          data: await aes.encrypt(nextCell.data as Uint8Array),
+        });
       }
     }
+    pipe([returnCell.encode()], encode(), stream.sink);
   };
 
-  async handleRelayCell(circuitId: number, cellData: Uint8Array) {
+  async handleRelayCell(circuitId: number, relayCell: RelayCell) {
     const { aes, hmac } = this.keys[`${circuitId}`];
-    const relayCell = RelayCell.from(await aes.decrypt(cellData));
     const relayCellData = relayCell.data.subarray(0, relayCell.len);
     const hash = await hmac.digest(relayCellData);
     if (!equals(Uint8Array.from(hash.subarray(0, 6)), relayCell.digest))
