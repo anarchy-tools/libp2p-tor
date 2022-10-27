@@ -60,7 +60,7 @@ export class Proxy extends Libp2pWrapped {
       }
       return _cell;
     });
-    let returnCell: Cell;
+    let returnCell: Uint8Array;
     if (cell.command == CellCommand.CREATE) {
       const cellData: Uint8Array = Uint8Array.from(
         //@ts-ignore
@@ -70,17 +70,21 @@ export class Proxy extends Libp2pWrapped {
         circuitId: cell.circuitId,
         command: CellCommand.CREATED,
         data: await this.handleCreateCell(cell.circuitId, cellData),
-      });
+      }).encode();
     } else if (cell.command == CellCommand.RELAY) {
+      console.log("relay");
       const aes = this.keys[`${cell.circuitId}`].aes;
-      const relayCell = RelayCell.from(
-        await aes.decrypt(cell.data as Uint8Array)
-      );
       const nextHop = this.keys[`${cell.circuitId}`].nextHop;
       if (nextHop == undefined) {
-        const cellData = await this.handleRelayCell(cell.circuitId, relayCell);
-        pipe([cellData], encode(), stream.sink);
+        console.log("next hop not defined");
+        returnCell = await this.handleRelayCell(
+          cell.circuitId,
+          RelayCell.from(await aes.decrypt(cell.data as Uint8Array))
+        );
       } else {
+        const relayCell = RelayCell.from(
+          await aes.decrypt(cell.data as Uint8Array)
+        );
         const nextHopStream = await this.dialProtocol(
           nextHop.multiaddr,
           "/tor/1.0.0/message"
@@ -111,10 +115,10 @@ export class Proxy extends Libp2pWrapped {
           command: CellCommand.RELAY,
           circuitId: cell.circuitId,
           data: await aes.encrypt(nextCell.data as Uint8Array),
-        });
+        }).encode();
       }
     }
-    pipe([returnCell.encode()], encode(), stream.sink);
+    pipe([returnCell], encode(), stream.sink);
   };
 
   async handleRelayCell(circuitId: number, relayCell: RelayCell) {
@@ -147,18 +151,18 @@ export class Proxy extends Libp2pWrapped {
         for await (const data of source) {
           result = data.subarray();
         }
-        return result;
+        return Cell.from(result);
       });
-      const returnDigest = await hmac.digest(returnData);
+      const returnDigest = await hmac.digest(returnData.data as Uint8Array);
       return new Cell({
         circuitId,
         command: CellCommand.RELAY,
         data: await aes.encrypt(
           new RelayCell({
-            data: returnData,
+            data: returnData.data as Uint8Array,
             command: RelayCellCommand.EXTENDED,
             streamId: circuitId,
-            len: returnData.length,
+            len: 65 + 32,
             digest: returnDigest,
           }).encode()
         ),
