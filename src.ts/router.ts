@@ -1,6 +1,6 @@
 import { RelayCell, Cell, CellCommand, RelayCellCommand } from "./tor";
 import { generateEphemeralKeyPair } from "@libp2p/crypto/keys";
-import { toString } from "uint8arrays";
+import { toString, fromString } from "uint8arrays";
 import { Multiaddr } from "@multiformats/multiaddr";
 import type { Libp2pOptions } from "libp2p";
 import { Libp2pWrapped } from "./libp2p.wrapper";
@@ -13,6 +13,7 @@ import { iv } from "./constants";
 import { equals } from "uint8arrays";
 import { multiaddr } from "multiaddr";
 
+type HmacType = Awaited<ReturnType<typeof crypto.hmac.create>>;
 const rsa = crypto.keys.supportedKeys.rsa;
 
 export class Router extends Libp2pWrapped {
@@ -32,7 +33,7 @@ export class Router extends Libp2pWrapped {
       hops: Multiaddr[];
       keys: Uint8Array[];
       aes: crypto.aes.AESCipher[];
-      hmac: any[];
+      hmac: HmacType[];
     }
   >;
 
@@ -72,7 +73,7 @@ export class Router extends Libp2pWrapped {
     );
     const digest = await hmac.digest(relayCellData);
     const _relay = new RelayCell({
-      streamId: circId,
+      streamId: Buffer.from(crypto.randomBytes(2)).readUint16BE(),
       command: RelayCellCommand.EXTEND,
       data: relayCellData,
       digest,
@@ -130,6 +131,31 @@ export class Router extends Libp2pWrapped {
       "relay extended to length:",
       this.keys[`${circId}`].keys.length
     );
+  }
+
+  async begin(circuitId: number = null) {
+    if (!circuitId) circuitId = Number(Object.keys(this.keys)[0]);
+    const keys = this.keys[`${circuitId}`];
+    const hmacLast = keys.hmac[keys.hmac.length - 1];
+    const data = fromString("https://google.com/");
+    const relayCell = new RelayCell({
+      command: RelayCellCommand.BEGIN,
+      data,
+      streamId: Buffer.from(crypto.randomBytes(2)).readUint16BE(),
+      digest: await hmacLast.digest(data),
+      len: data.length,
+    }).encode();
+    const encodedData = await [...keys.aes].reverse().reduce(async (a, aes) => {
+      return await aes.encrypt(await a);
+    }, Promise.resolve(relayCell));
+    const cell = new Cell({
+      command: CellCommand.RELAY,
+      circuitId,
+      data: encodedData,
+    }).encode();
+    console.log(keys.hops[0]);
+    const stream = await this.dialProtocol(keys.hops[0], "/tor/1.0.0/message");
+    pipe([cell], encode(), stream.sink);
   }
 
   async create() {

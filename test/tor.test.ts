@@ -8,7 +8,7 @@ import { encode, decode } from "it-length-prefixed";
 import { pipe } from "it-pipe";
 import { toString } from "uint8arrays";
 
-describe("registry", () => {
+describe("tor", () => {
   let registry: Registry,
     proxies: Proxy[] = [],
     router: Router;
@@ -30,7 +30,7 @@ describe("registry", () => {
     });
   });
 
-  it("should give the correct pubkey for the correct relay", async () => {
+  it("registry: should give the correct pubkey for the correct relay", async () => {
     const proxy = proxies[0];
 
     const pubKey = router.proxies.filter(
@@ -39,7 +39,11 @@ describe("registry", () => {
     expect(equals(pubKey.marshal(), proxy.key())).to.equal(true);
   });
 
-  it("should perform a handshake with relays", async () => {
-    await router.build(2);
+  it("extend: should perform a handshake with relays", async () => {
+    await router.build(3);
+  });
+  it("begin: should begin the data relay", async () => {
+    await router.build(3);
+    await router.begin();
   });
 });

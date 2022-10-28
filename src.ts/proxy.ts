@@ -82,6 +82,7 @@ export class Proxy extends Libp2pWrapped {
           RelayCell.from(await aes.decrypt(cell.data as Uint8Array))
         );
       } else {
+        console.log("sending to next hop");
         const relayCell = RelayCell.from(
           await aes.decrypt(cell.data as Uint8Array)
         );
