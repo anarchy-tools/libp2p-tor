@@ -11,6 +11,8 @@ import { fromString, equals } from "uint8arrays";
 import * as crypto from "@libp2p/crypto";
 import type { PrivateKey } from "@libp2p/interface-keys";
 import { iv } from "./constants";
+import { CID } from "multiformats/cid";
+import { sha256 } from "multiformats/hashes/sha2";
 
 const createHmac = crypto.hmac.create;
 
@@ -50,7 +52,21 @@ export class Proxy extends Libp2pWrapped {
     this.torKey = await crypto.keys.generateKeyPair("RSA", 1024);
     await this.register();
     await this.handle("/tor/1.0.0/message", this.handleTorMessage);
+    await this.handle("/tor/1.0.0/advertise", this.handleAdvertise);
   }
+
+  handleAdvertise: StreamHandler = async ({ stream }) => {
+    const pubKey = await pipe(stream.source, decode(), async (source) => {
+      let _pubKey: Uint8Array;
+      for await (const data of source) {
+        _pubKey = data.subarray();
+      }
+      return _pubKey;
+    });
+    const hash = await sha256.digest(pubKey);
+    const cid = CID.create(0, 0x01, hash);
+    this._libp2p.contentRouting.provide(cid);
+  };
 
   handleTorMessage: StreamHandler = async ({ stream }) => {
     const cell = await pipe(stream.source, decode(), async (source) => {

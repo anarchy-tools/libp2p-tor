@@ -46,4 +46,8 @@ describe("tor", () => {
     await router.build(3);
     await router.begin();
   });
+
+  it("rendezvous: should test rendezvous points", async () => {
+    await router.advertise();
+  });
 });

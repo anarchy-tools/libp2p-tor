@@ -42,6 +42,7 @@
     "libp2p": "0.38.0",
     "lodash": "^4.17.21",
     "multiaddr": "^10.0.1",
+    "multiformats": "^10.0.2",
     "peer-id": "^0.16.0",
     "uint8arrays": "^4.0.2"
   }

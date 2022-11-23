@@ -12,12 +12,14 @@ import { Buffer } from "node:buffer";
 import { iv } from "./constants";
 import { equals } from "uint8arrays";
 import { multiaddr } from "multiaddr";
+import type { PrivateKey } from "@libp2p/interface-keys";
 
 type HmacType = Awaited<ReturnType<typeof crypto.hmac.create>>;
 const rsa = crypto.keys.supportedKeys.rsa;
 
 export class Router extends Libp2pWrapped {
   public registries: Multiaddr[];
+  private advertiseKey: PrivateKey;
   public proxies: {
     publicKey: {
       encrypt: (bytes: Uint8Array) => Promise<Buffer>;
@@ -200,6 +202,18 @@ export class Router extends Libp2pWrapped {
     return circId;
   }
 
+  async advertise() {
+    const points = await this.pickAdvertisePoints();
+    await points.reduce(async (_a, p) => {
+      await _a;
+      const stream = await this.dialProtocol(p, "/tor/1.0.0/advertise");
+      await pipe([this.advertiseKey.public.bytes], encode(), stream.sink);
+    }, Promise.resolve());
+  }
+
+  async pickAdvertisePoints(): Promise<Multiaddr[]> {
+    return this.proxies.map((d) => d.addr);
+  }
   async fetchKeys() {
     this.proxies = await this.registries.reduce<
       Promise<{ id: string; addr: Multiaddr; publicKey: any }[]>
@@ -247,5 +261,7 @@ export class Router extends Libp2pWrapped {
   async run(options: Libp2pOptions) {
     await super.run(options);
     await this.fetchKeys();
+    this.advertiseKey = await crypto.keys.generateKeyPair("RSA", 1024);
+    await this.advertise();
   }
 }
