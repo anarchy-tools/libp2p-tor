@@ -13,13 +13,15 @@ import { iv } from "./constants";
 import { equals } from "uint8arrays";
 import { multiaddr } from "multiaddr";
 import type { PrivateKey } from "@libp2p/interface-keys";
+import { CID } from "multiformats/cid";
+import { sha256 } from "multiformats/hashes/sha2";
 
 type HmacType = Awaited<ReturnType<typeof crypto.hmac.create>>;
 const rsa = crypto.keys.supportedKeys.rsa;
 
 export class Router extends Libp2pWrapped {
   public registries: Multiaddr[];
-  private advertiseKey: PrivateKey;
+  public advertiseKey: PrivateKey;
   public proxies: {
     publicKey: {
       encrypt: (bytes: Uint8Array) => Promise<Buffer>;
@@ -214,11 +216,22 @@ export class Router extends Libp2pWrapped {
   async pickAdvertisePoints(): Promise<Multiaddr[]> {
     return this.proxies.map((d) => d.addr);
   }
+
+  async rendezvous(pubKey: Uint8Array) {
+    const hash = await sha256.digest(pubKey);
+    const cid = CID.create(1, 0x01, hash);
+    const peers = this._libp2p.contentRouting
+      .findProviders(cid)
+      [Symbol.asyncIterator]();
+    const peer = (await peers.next()).value;
+    await this.build(3);
+  }
   async fetchKeys() {
     this.proxies = await this.registries.reduce<
       Promise<{ id: string; addr: Multiaddr; publicKey: any }[]>
     >(async (results, registry) => {
       try {
+        console.log("dialing registry");
         const stream = await this.dialProtocol(registry, "/tor/1.0.0/relays");
         const _results = await pipe(
           stream.source,
@@ -253,7 +266,7 @@ export class Router extends Libp2pWrapped {
 
         return [...(await results), ..._results];
       } catch (e) {
-        console.log(e);
+        console.log(e.errors);
       }
     }, Promise.resolve([]));
   }
@@ -261,7 +274,8 @@ export class Router extends Libp2pWrapped {
   async run(options: Libp2pOptions) {
     await super.run(options);
     await this.fetchKeys();
+
     this.advertiseKey = await crypto.keys.generateKeyPair("RSA", 1024);
-    await this.advertise();
+    //await this.advertise();
   }
 }

@@ -1,6 +1,7 @@
 import type { Libp2p, Libp2pOptions } from "libp2p";
 import { createLibp2p } from "libp2p";
 import { TCP } from "@libp2p/tcp";
+import { KadDHT } from "@libp2p/kad-dht";
 import { mplex } from "@libp2p/mplex";
 import { Noise } from "@chainsafe/libp2p-noise";
 import { EventEmitter } from "node:events";
@@ -16,6 +17,8 @@ export async function createLibp2pNode(
   options.connectionEncryption = [new Noise()];
   //@ts-ignore
   options.streamMuxers = [mplex()()];
+  //@ts-ignore
+  options.dht = new KadDHT();
 
   return await createLibp2p(options);
 }

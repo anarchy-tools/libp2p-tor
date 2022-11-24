@@ -64,8 +64,8 @@ export class Proxy extends Libp2pWrapped {
       return _pubKey;
     });
     const hash = await sha256.digest(pubKey);
-    const cid = CID.create(0, 0x01, hash);
-    this._libp2p.contentRouting.provide(cid);
+    const cid = CID.create(1, 0x01, hash);
+    await this._libp2p.contentRouting.provide(cid);
   };
 
   handleTorMessage: StreamHandler = async ({ stream }) => {

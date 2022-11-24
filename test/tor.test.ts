@@ -11,7 +11,8 @@ import { toString } from "uint8arrays";
 describe("tor", () => {
   let registry: Registry,
     proxies: Proxy[] = [],
-    router: Router;
+    router: Router,
+    router2: Router;
 
   before(async () => {
     registry = new Registry();
@@ -20,6 +21,7 @@ describe("tor", () => {
       proxies.push(new Proxy(registry._libp2p.getMultiaddrs()))
     );
     router = new Router(registry._libp2p.getMultiaddrs());
+    router2 = new Router(registry._libp2p.getMultiaddrs());
     await proxies.reduce(async (_, proxy) => {
       await proxy.run();
     }, Promise.resolve());
@@ -28,6 +30,7 @@ describe("tor", () => {
         listen: ["/ip4/127.0.0.1/tcp/0"],
       },
     });
+    await router2.run({ addresses: { listen: ["/ip4/127.0.0.1/tcp/0"] } });
   });
 
   it("registry: should give the correct pubkey for the correct relay", async () => {
@@ -48,6 +51,7 @@ describe("tor", () => {
   });
 
   it("rendezvous: should test rendezvous points", async () => {
-    await router.advertise();
+    await router2.advertise();
+    await router.rendezvous(router2.advertiseKey.public.bytes);
   });
 });
