@@ -93,10 +93,10 @@ export class Proxy extends Libp2pWrapped {
       const nextHop = this.keys[`${cell.circuitId}`].nextHop;
       if (nextHop == undefined) {
         console.log("next hop not defined");
-        returnCell = await this.handleRelayCell(
-          cell.circuitId,
-          RelayCell.from(await aes.decrypt(cell.data as Uint8Array))
-        );
+        returnCell = await this.handleRelayCell({
+          circuitId: cell.circuitId,
+          relayCell: RelayCell.from(await aes.decrypt(cell.data as Uint8Array)),
+        });
       } else {
         console.log("sending to next hop");
         const relayCell = RelayCell.from(
@@ -138,53 +138,70 @@ export class Proxy extends Libp2pWrapped {
     pipe([returnCell], encode(), stream.sink);
   };
 
-  async handleRelayCell(circuitId: number, relayCell: RelayCell) {
-    const { aes, hmac } = this.keys[`${circuitId}`];
+  async handleRelayCell({
+    circuitId,
+    relayCell,
+  }: {
+    circuitId: number;
+    relayCell: RelayCell;
+  }) {
+    const { hmac } = this.keys[`${circuitId}`];
     const relayCellData = relayCell.data.subarray(0, relayCell.len);
     const hash = await hmac.digest(relayCellData);
     if (!equals(Uint8Array.from(hash.subarray(0, 6)), relayCell.digest))
       throw new Error("digest does not match");
     if (relayCell.command == RelayCellCommand.EXTEND) {
-      const encryptedKey = relayCellData.slice(0, 128);
-      const multiAddr = multiaddr(relayCellData.slice(128));
-      const hop = (this.keys[`${circuitId}`].nextHop = {
-        multiaddr: multiAddr,
-        circuitId: Buffer.from(crypto.randomBytes(16)).readUint16BE(),
-      });
-      const stream = await this.dialProtocol(multiAddr, "/tor/1.0.0/message");
-      pipe(
-        [
-          new Cell({
-            command: CellCommand.CREATE,
-            data: encryptedKey,
-            circuitId: hop.circuitId,
-          }).encode(),
-        ],
-        encode(),
-        stream.sink
-      );
-      const returnData = await pipe(stream.source, decode(), async (source) => {
-        let result: Uint8Array;
-        for await (const data of source) {
-          result = data.subarray();
-        }
-        return Cell.from(result);
-      });
-      const returnDigest = await hmac.digest(returnData.data as Uint8Array);
-      return new Cell({
-        circuitId,
-        command: CellCommand.RELAY,
-        data: await aes.encrypt(
-          new RelayCell({
-            data: returnData.data as Uint8Array,
-            command: RelayCellCommand.EXTENDED,
-            streamId: circuitId,
-            len: 65 + 32,
-            digest: returnDigest,
-          }).encode()
-        ),
-      }).encode();
+      return await this.handleRelayExtend({ circuitId, relayCellData });
     }
+  }
+
+  async handleRelayExtend({
+    circuitId,
+    relayCellData,
+  }: {
+    circuitId: number;
+    relayCellData: Uint8Array;
+  }) {
+    const { aes, hmac } = this.keys[`${circuitId}`];
+    const encryptedKey = relayCellData.slice(0, 128);
+    const multiAddr = multiaddr(relayCellData.slice(128));
+    const hop = (this.keys[`${circuitId}`].nextHop = {
+      multiaddr: multiAddr,
+      circuitId: Buffer.from(crypto.randomBytes(16)).readUint16BE(),
+    });
+    const stream = await this.dialProtocol(multiAddr, "/tor/1.0.0/message");
+    pipe(
+      [
+        new Cell({
+          command: CellCommand.CREATE,
+          data: encryptedKey,
+          circuitId: hop.circuitId,
+        }).encode(),
+      ],
+      encode(),
+      stream.sink
+    );
+    const returnData = await pipe(stream.source, decode(), async (source) => {
+      let result: Uint8Array;
+      for await (const data of source) {
+        result = data.subarray();
+      }
+      return Cell.from(result);
+    });
+    const returnDigest = await hmac.digest(returnData.data as Uint8Array);
+    return new Cell({
+      circuitId,
+      command: CellCommand.RELAY,
+      data: await aes.encrypt(
+        new RelayCell({
+          data: returnData.data as Uint8Array,
+          command: RelayCellCommand.EXTENDED,
+          streamId: circuitId,
+          len: 65 + 32,
+          digest: returnDigest,
+        }).encode()
+      ),
+    }).encode();
   }
 
   async handleCreateCell(circuitId: number, cellData: Uint8Array) {
