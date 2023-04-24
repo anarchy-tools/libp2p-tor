@@ -183,6 +183,19 @@ export class Router extends Libp2pWrapped {
     }).encode();
     const stream = await this.dialProtocol(keys.hops[0], "/tor/1.0.0/message");
     pipe([cell], encode(), stream.sink);
+    const res = await pipe(stream.source, decode(), async (source) => {
+      let result: Uint8Array;
+      for await (const data of source) {
+        result = data.subarray();
+      }
+      return result;
+    });
+    const decodedResult = await keys.aes.reduce(async (a, aes) => {
+      return await aes.decrypt(await a);
+    }, Promise.resolve(Cell.from(res).data as Uint8Array));
+    const resultCell = RelayCell.from(decodedResult);
+    if (resultCell.command == RelayCellCommand.END)
+      throw new Error("Couldn't begin the circuit");
   }
 
   async create() {
