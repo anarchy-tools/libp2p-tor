@@ -7,12 +7,13 @@ import { encode, decode } from "it-length-prefixed";
 import { Multiaddr, multiaddr } from "@multiformats/multiaddr";
 import { Cell, CellCommand, RelayCell, RelayCellCommand } from "./tor";
 import { StreamHandler } from "@libp2p/interface-registrar";
-import { fromString, equals } from "uint8arrays";
+import { fromString, equals, toString } from "uint8arrays";
 import * as crypto from "@libp2p/crypto";
 import type { PrivateKey } from "@libp2p/interface-keys";
 import { iv } from "./constants";
 import { CID } from "multiformats/cid";
 import { sha256 } from "multiformats/hashes/sha2";
+import { peerIdFromString } from "@libp2p/peer-id";
 
 const createHmac = crypto.hmac.create;
 
@@ -153,8 +154,65 @@ export class Proxy extends Libp2pWrapped {
     if (relayCell.command == RelayCellCommand.EXTEND) {
       return await this.handleRelayExtend({ circuitId, relayCellData });
     }
+    if (relayCell.command == RelayCellCommand.BEGIN) {
+      return await this.handleRelayBegin({ circuitId, relayCellData });
+    }
   }
+  async handleRelayBegin({
+    circuitId,
+    relayCellData,
+  }: {
+    circuitId: number;
+    relayCellData: Uint8Array;
+  }) {
+    //TODO: has to return cell with CONNECTED
+    const { aes, hmac } = this.keys[`${circuitId}`];
+    const stream = await this.dialProtocol(
+      multiaddr(relayCellData.slice(128)),
+      "/tor/1.0.0/baseMessage"
+    );
+    pipe([fromString("BEGIN")], encode(), stream.sink);
+    const returnData = toString(
+      await pipe(stream.source, decode(), async (source) => {
+        let result: Uint8Array;
+        for await (const data of source) {
+          result = data.subarray();
+        }
+        return result;
+      })
+    );
 
+    const data = fromString("");
+    if (returnData == "BEGUN") {
+      return new Cell({
+        command: CellCommand.RELAY,
+        data: await aes.encrypt(
+          new RelayCell({
+            command: RelayCellCommand.CONNECTED,
+            data,
+            streamId: circuitId,
+            digest: await hmac.digest(data),
+            len: data.length,
+          }).encode()
+        ),
+        circuitId,
+      }).encode();
+    } else {
+      return new Cell({
+        command: CellCommand.RELAY,
+        data: await aes.encrypt(
+          new RelayCell({
+            command: RelayCellCommand.END,
+            data,
+            streamId: circuitId,
+            digest: await hmac.digest(data),
+            len: data.length,
+          }).encode()
+        ),
+        circuitId,
+      }).encode();
+    }
+  }
   async handleRelayExtend({
     circuitId,
     relayCellData,

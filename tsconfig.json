@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
-    "lib": ["es2020", "es5", "dom"],
+    "lib": [
+      "es2020",
+      "es5",
+      "dom"
+    ],
     "preserveWatchOutput": true,
     "pretty": false,
     "experimentalDecorators": true,
@@ -13,8 +17,11 @@
     "sourceMap": true,
     "outDir": "./lib",
     "declaration": true,
-    "esModuleInterop": true
   },
-  "include": ["src.ts/*"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src.ts/*"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

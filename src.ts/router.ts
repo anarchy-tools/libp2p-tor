@@ -137,11 +137,35 @@ export class Router extends Libp2pWrapped {
     );
   }
 
-  async begin(circuitId: number = null) {
+  async send(_data: string = "", circuitId: number = null) {
+    if (!circuitId) circuitId = Number(Object.keys(this.keys))[0];
+    const keys = this.keys[`${circuitId}`];
+    const hmacLast = keys.hmac[keys.hmac.length - 1];
+    const data = fromString(_data);
+    const relayCell = new RelayCell({
+      command: RelayCellCommand.DATA,
+      data,
+      streamId: Buffer.from(crypto.randomBytes(2)).readUint16BE(),
+      digest: await hmacLast.digest(data),
+      len: data.length,
+    }).encode();
+    const encodedData = await [...keys.aes].reverse().reduce(async (a, aes) => {
+      return await aes.encrypt(await a);
+    }, Promise.resolve(relayCell));
+    const cell = new Cell({
+      command: CellCommand.RELAY,
+      circuitId,
+      data: encodedData,
+    }).encode();
+    const stream = await this.dialProtocol(keys.hops[0], "/tor/1.0.0/message");
+    pipe([cell], encode(), stream.sink);
+  }
+
+  async begin(peer: string = "", circuitId: number = null) {
     if (!circuitId) circuitId = Number(Object.keys(this.keys)[0]);
     const keys = this.keys[`${circuitId}`];
     const hmacLast = keys.hmac[keys.hmac.length - 1];
-    const data = fromString("https://google.com/");
+    const data = fromString(peer);
     const relayCell = new RelayCell({
       command: RelayCellCommand.BEGIN,
       data,
@@ -157,7 +181,6 @@ export class Router extends Libp2pWrapped {
       circuitId,
       data: encodedData,
     }).encode();
-    console.log(keys.hops[0]);
     const stream = await this.dialProtocol(keys.hops[0], "/tor/1.0.0/message");
     pipe([cell], encode(), stream.sink);
   }
@@ -225,6 +248,7 @@ export class Router extends Libp2pWrapped {
       [Symbol.asyncIterator]();
     const peer = (await peers.next()).value;
     await this.build(3);
+    //TODO: make this pass keys through rendezvous point
   }
   async fetchKeys() {
     this.proxies = await this.registries.reduce<
