@@ -34,7 +34,7 @@ export class Proxy extends Libp2pWrapped {
       };
     }
   >;
-  private active: Record<number, boolean>;
+  private active: Record<number, Multiaddr>;
 
   constructor(registries: Multiaddr[]) {
     super();
@@ -169,7 +169,49 @@ export class Proxy extends Libp2pWrapped {
   }: {
     circuitId: number;
     relayCellData: Uint8Array;
-  }) {}
+  }) {
+    const { aes, hmac } = this.keys[`${circuitId}`];
+    if (this.active[circuitId]) {
+      const stream = await this.dialProtocol(
+        this.active[circuitId],
+        "/tor/1.0.0/baseMessage"
+      );
+      pipe([relayCellData], encode(), stream.sink);
+      const returnData = await pipe(stream.source, decode(), async (source) => {
+        let _d: Uint8Array;
+        for await (const data of source) {
+          _d = data.subarray();
+        }
+        return _d;
+      });
+      return new Cell({
+        command: CellCommand.RELAY,
+        data: await aes.encrypt(
+          new RelayCell({
+            streamId: circuitId,
+            data: returnData,
+            len: returnData.length,
+            digest: await hmac.digest(returnData),
+            command: RelayCellCommand.DATA,
+          }).encode()
+        ),
+        circuitId,
+      }).encode();
+    }
+    return new Cell({
+      command: CellCommand.RELAY,
+      circuitId,
+      data: await aes.encrypt(
+        new RelayCell({
+          command: RelayCellCommand.END,
+          data: fromString(""),
+          len: 0,
+          digest: await hmac.digest(fromString("")),
+          streamId: circuitId,
+        }).encode()
+      ),
+    });
+  }
   async handleRelayBegin({
     circuitId,
     relayCellData,
@@ -177,12 +219,9 @@ export class Proxy extends Libp2pWrapped {
     circuitId: number;
     relayCellData: Uint8Array;
   }) {
-    //TODO: has to return cell with CONNECTED
     const { aes, hmac } = this.keys[`${circuitId}`];
-    const stream = await this.dialProtocol(
-      multiaddr(relayCellData.slice(128)),
-      "/tor/1.0.0/baseMessage"
-    );
+    const addr = multiaddr(relayCellData.slice(128));
+    const stream = await this.dialProtocol(addr, "/tor/1.0.0/baseMessage");
     pipe([fromString("BEGIN")], encode(), stream.sink);
     const returnData = toString(
       await pipe(stream.source, decode(), async (source) => {
@@ -196,7 +235,7 @@ export class Proxy extends Libp2pWrapped {
 
     const data = fromString("");
     if (returnData == "BEGUN") {
-      this.active[circuitId] = true;
+      this.active[circuitId] = addr;
       return new Cell({
         command: CellCommand.RELAY,
         data: await aes.encrypt(
