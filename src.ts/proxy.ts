@@ -34,12 +34,14 @@ export class Proxy extends Libp2pWrapped {
       };
     }
   >;
+  private active: Record<number, boolean>;
 
   constructor(registries: Multiaddr[]) {
     super();
     this.registries = registries;
     this.keys = {};
     this.torKey = null;
+    this.active = {};
   }
 
   async run(
@@ -157,7 +159,17 @@ export class Proxy extends Libp2pWrapped {
     if (relayCell.command == RelayCellCommand.BEGIN) {
       return await this.handleRelayBegin({ circuitId, relayCellData });
     }
+    if (relayCell.command == RelayCellCommand.DATA) {
+      return await this.handleRelayData({ circuitId, relayCellData });
+    }
   }
+  async handleRelayData({
+    circuitId,
+    relayCellData,
+  }: {
+    circuitId: number;
+    relayCellData: Uint8Array;
+  }) {}
   async handleRelayBegin({
     circuitId,
     relayCellData,
@@ -184,6 +196,7 @@ export class Proxy extends Libp2pWrapped {
 
     const data = fromString("");
     if (returnData == "BEGUN") {
+      this.active[circuitId] = true;
       return new Cell({
         command: CellCommand.RELAY,
         data: await aes.encrypt(

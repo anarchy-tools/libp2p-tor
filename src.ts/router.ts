@@ -15,6 +15,7 @@ import { multiaddr } from "multiaddr";
 import type { PrivateKey } from "@libp2p/interface-keys";
 import { CID } from "multiformats/cid";
 import { sha256 } from "multiformats/hashes/sha2";
+import type { PeerInfo } from "@libp2p/interface-peer-info";
 
 type HmacType = Awaited<ReturnType<typeof crypto.hmac.create>>;
 const rsa = crypto.keys.supportedKeys.rsa;
@@ -259,8 +260,9 @@ export class Router extends Libp2pWrapped {
     const peers = this._libp2p.contentRouting
       .findProviders(cid)
       [Symbol.asyncIterator]();
-    const peer = (await peers.next()).value;
+    const peer: PeerInfo = (await peers.next()).value;
     await this.build(3);
+    await this.begin(peer.multiaddrs[0].toString());
     //TODO: make this pass keys through rendezvous point
   }
   async fetchKeys() {
